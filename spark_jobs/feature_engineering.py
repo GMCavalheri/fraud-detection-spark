@@ -115,6 +115,7 @@ def main():
     df = df.drop("hist_avg_amount", "hist_stddev_amount")
     df = df.fillna({"seconds_since_last_txn": -1, "distance_from_last_txn_km": -1.0, "implied_travel_speed_kmh": -1.0})
 
+    df = df.coalesce(4)
     df.write.mode("overwrite").partitionBy("event_date").parquet(FEATURES_PATH)
     print(f"Feature engineering complete. Rows written: {df.count()}")
 

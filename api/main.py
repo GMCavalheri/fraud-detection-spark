@@ -14,9 +14,8 @@ from schemas import (
     Transaction, TransactionsPage,
 )
 
-MODELS_DIR = os.environ.get("MODELS_DIR", "/opt/models")
-METRICS_PATH = os.path.join(MODELS_DIR, "metrics.json")
 PROCESSED_DATA_DIR = os.environ.get("PROCESSED_DATA_DIR", "/opt/data/processed")
+METRICS_PATH = os.path.join(PROCESSED_DATA_DIR, "metrics.json")
 DQ_REPORT_PATH = os.path.join(PROCESSED_DATA_DIR, "data_quality_report.json")
 
 app = FastAPI(

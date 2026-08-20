@@ -5,14 +5,21 @@ import os
 from pyspark.sql import SparkSession
 
 RAW_DIR = os.environ.get("RAW_DATA_DIR", "/opt/data/raw")
-PROCESSED_DIR = os.environ.get("PROCESSED_DATA_DIR", "/opt/data/processed")
-MODELS_DIR = os.environ.get("MODELS_DIR", "/opt/models")
 
-CLEANED_PATH = os.path.join(PROCESSED_DIR, "cleaned")
-FEATURES_PATH = os.path.join(PROCESSED_DIR, "features")
-DQ_REPORT_PATH = os.path.join(PROCESSED_DIR, "data_quality_report.json")
-METRICS_PATH = os.path.join(MODELS_DIR, "metrics.json")
-MODEL_PATH = os.path.join(MODELS_DIR, "fraud_model")
+# Small single-file JSON reports are written directly by driver-side Python
+# code (plain open()/json.dump), so they stay on the shared bind mount - that
+# works fine, only Spark's distributed executor writes do not (see get_spark).
+LOCAL_PROCESSED_DIR = os.environ.get("PROCESSED_DATA_DIR", "/opt/data/processed")
+DQ_REPORT_PATH = os.path.join(LOCAL_PROCESSED_DIR, "data_quality_report.json")
+METRICS_PATH = os.path.join(LOCAL_PROCESSED_DIR, "metrics.json")
+
+# Bulk Parquet/model artifacts that Spark executors write with the
+# distributed FileFormatWriter go to S3-compatible object storage (MinIO)
+# instead of the bind-mounted host directory - see get_spark() for why.
+S3_BUCKET = os.environ.get("MINIO_BUCKET", "fraud-detection")
+CLEANED_PATH = f"s3a://{S3_BUCKET}/processed/cleaned"
+FEATURES_PATH = f"s3a://{S3_BUCKET}/processed/features"
+MODEL_PATH = f"s3a://{S3_BUCKET}/models/fraud_model"
 
 # category taxonomy shared with the data generator so MCC codes / free-text
 # categories from every source map onto the same canonical set
@@ -66,7 +73,27 @@ def get_spark(app_name: str) -> SparkSession:
         .master(master)
         .config("spark.sql.session.timeZone", "UTC")
         .config("spark.sql.shuffle.partitions", os.environ.get("SPARK_SHUFFLE_PARTITIONS", "16"))
-        .config("spark.jars.packages", "org.postgresql:postgresql:42.7.3")
+        .config(
+            "spark.jars.packages",
+            "org.postgresql:postgresql:42.7.3,"
+            "org.apache.hadoop:hadoop-aws:3.3.4,"
+            "com.amazonaws:aws-java-sdk-bundle:1.12.262",
+        )
+        # Bulk Parquet/model output goes to MinIO (S3-compatible) rather than
+        # the bind-mounted host directory: when the driver and executors are
+        # genuinely separate containers, Hadoop's local file:// commit
+        # protocol (mkdirs() on the shared _temporary staging tree) is
+        # unreliable across their independent bind-mount views - object
+        # storage sidesteps that whole class of problem, which is exactly why
+        # real distributed Spark deployments use HDFS/S3 instead of a local
+        # path in the first place.
+        .config("spark.hadoop.fs.s3a.endpoint", os.environ.get("MINIO_ENDPOINT", "http://minio:9000"))
+        .config("spark.hadoop.fs.s3a.access.key", os.environ.get("MINIO_ACCESS_KEY", "minioadmin"))
+        .config("spark.hadoop.fs.s3a.secret.key", os.environ.get("MINIO_SECRET_KEY", "minioadmin"))
+        .config("spark.hadoop.fs.s3a.path.style.access", "true")
+        .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
+        .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false")
+        .config("spark.hadoop.fs.s3a.aws.credentials.provider", "org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider")
     )
     return builder.getOrCreate()
 

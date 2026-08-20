@@ -17,8 +17,8 @@ from constants import CITY_COORDS
 
 import db
 
-MODELS_DIR = os.environ.get("MODELS_DIR", "/opt/models")
-MODEL_PATH = os.path.join(MODELS_DIR, "fraud_model")
+S3_BUCKET = os.environ.get("MINIO_BUCKET", "fraud-detection")
+MODEL_PATH = os.environ.get("MODEL_PATH", f"s3a://{S3_BUCKET}/models/fraud_model")
 
 _spark = None
 _model = None
@@ -35,6 +35,16 @@ def _get_model():
             .master("local[2]")
             .config("spark.sql.session.timeZone", "UTC")
             .config("spark.ui.enabled", "false")
+            .config(
+                "spark.jars.packages",
+                "org.apache.hadoop:hadoop-aws:3.3.4,com.amazonaws:aws-java-sdk-bundle:1.12.262",
+            )
+            .config("spark.hadoop.fs.s3a.endpoint", os.environ.get("MINIO_ENDPOINT", "http://minio:9000"))
+            .config("spark.hadoop.fs.s3a.access.key", os.environ.get("MINIO_ACCESS_KEY", "minioadmin"))
+            .config("spark.hadoop.fs.s3a.secret.key", os.environ.get("MINIO_SECRET_KEY", "minioadmin"))
+            .config("spark.hadoop.fs.s3a.path.style.access", "true")
+            .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
+            .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false")
             .getOrCreate()
         )
         _model = PipelineModel.load(MODEL_PATH)

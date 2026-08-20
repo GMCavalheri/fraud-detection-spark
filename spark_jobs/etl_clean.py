@@ -200,7 +200,7 @@ def main():
     final_count = cleaned.count()
 
     cleaned = cleaned.withColumn("event_date", F.to_date("event_ts"))
-    cleaned.write.mode("overwrite").partitionBy("event_date").parquet(CLEANED_PATH)
+    cleaned.coalesce(4).write.mode("overwrite").partitionBy("event_date").parquet(CLEANED_PATH)
 
     report = {
         "raw_row_counts": {
