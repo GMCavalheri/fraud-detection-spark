@@ -230,9 +230,17 @@ def apply_label_noise(is_fraud):
 # --------------------------------------------------------------------------------------
 # Source 1: core_transactions (CSV) - main feed
 # --------------------------------------------------------------------------------------
+MIN_CHUNK_FOR_PATTERNS = 2000  # below this, skip fraud-pattern injection entirely (avoids
+                                # the "max(1, ...) floor exceeds a tiny trailing chunk" bug)
+
+
 def generate_core_chunk(n, id_offset=0):
-    n_burst = max(1, int(n * 0.0005))       # ~10 rows/burst -> ~0.5% of rows
-    n_travel_pairs = max(1, int(n * 0.001))  # 2 rows/pair -> ~0.2% of rows
+    if n < MIN_CHUNK_FOR_PATTERNS:
+        n_burst = 0
+        n_travel_pairs = 0
+    else:
+        n_burst = max(1, int(n * 0.0005))       # ~10 rows/burst -> ~0.5% of rows
+        n_travel_pairs = max(1, int(n * 0.001))  # 2 rows/pair -> ~0.2% of rows
     n_background = n - n_burst * 10 - n_travel_pairs * 2  # rough budget, corrected after
 
     accounts_bg = random_accounts(n_background)
@@ -343,7 +351,10 @@ def generate_core_chunk(n, id_offset=0):
 # Source 2: mobile_events (JSON lines) - schema drift, nested device info
 # --------------------------------------------------------------------------------------
 def generate_mobile_chunk(n, id_offset=0):
-    n_burst = max(1, int(n * 0.0008))  # ~13 rows/burst -> ~1% of rows
+    if n < MIN_CHUNK_FOR_PATTERNS:
+        n_burst = 0
+    else:
+        n_burst = max(1, int(n * 0.0008))  # ~13 rows/burst -> ~1% of rows
     n_background = n - n_burst * 13
 
     accounts_bg = random_accounts(n_background)

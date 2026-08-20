@@ -1,6 +1,7 @@
 services:
   spark-master:
     image: bitnamilegacy/spark:3.5.6
+    mem_limit: 512m
     environment:
       - SPARK_MODE=master
       - SPARK_RPC_AUTHENTICATION_ENABLED=no
@@ -17,13 +18,14 @@ services:
 
   spark-worker-1:
     image: bitnamilegacy/spark:3.5.6
+    mem_limit: 1.5g
     depends_on:
       spark-master:
         condition: service_healthy
     environment:
       - SPARK_MODE=worker
       - SPARK_MASTER_URL=spark://spark-master:7077
-      - SPARK_WORKER_MEMORY=2G
+      - SPARK_WORKER_MEMORY=1G
       - SPARK_WORKER_CORES=2
       - SPARK_RPC_AUTHENTICATION_ENABLED=no
       - SPARK_RPC_ENCRYPTION_ENABLED=no
@@ -34,13 +36,14 @@ services:
 
   spark-worker-2:
     image: bitnamilegacy/spark:3.5.6
+    mem_limit: 1.5g
     depends_on:
       spark-master:
         condition: service_healthy
     environment:
       - SPARK_MODE=worker
       - SPARK_MASTER_URL=spark://spark-master:7077
-      - SPARK_WORKER_MEMORY=2G
+      - SPARK_WORKER_MEMORY=1G
       - SPARK_WORKER_CORES=2
       - SPARK_RPC_AUTHENTICATION_ENABLED=no
       - SPARK_RPC_ENCRYPTION_ENABLED=no
@@ -51,6 +54,7 @@ services:
 
   minio:
     image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    mem_limit: 512m
     command: server /data --console-address ":9001"
     environment:
       - MINIO_ROOT_USER=${MINIO_ACCESS_KEY:-minioadmin}
@@ -84,6 +88,7 @@ services:
   #   docker compose run --rm spark-pipeline
   spark-pipeline:
     build: ./spark_jobs
+    mem_limit: 1.5g
     profiles: ["pipeline"]
     depends_on:
       spark-master:
@@ -110,6 +115,7 @@ services:
 
   postgres:
     image: postgres:16
+    mem_limit: 512m
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-fraud_admin}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-change_me}
@@ -127,6 +133,7 @@ services:
 
   api:
     build: ./api
+    mem_limit: 1g
     depends_on:
       postgres:
         condition: service_healthy
@@ -148,6 +155,7 @@ services:
 
   frontend:
     build: ./frontend
+    mem_limit: 512m
     depends_on:
       - api
     environment:

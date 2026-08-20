@@ -14,9 +14,9 @@ run_job() {
   echo "=================================================================="
   spark-submit \
     --master "${SPARK_MASTER_URL}" \
-    --packages org.postgresql:postgresql:42.7.3 \
-    --conf spark.driver.memory="${SPARK_DRIVER_MEMORY:-2g}" \
-    --conf spark.executor.memory="${SPARK_EXECUTOR_MEMORY:-2g}" \
+    --packages org.postgresql:postgresql:42.7.3,org.apache.hadoop:hadoop-aws:3.3.4,com.amazonaws:aws-java-sdk-bundle:1.12.262 \
+    --conf spark.driver.memory="${SPARK_DRIVER_MEMORY:-1g}" \
+    --conf spark.executor.memory="${SPARK_EXECUTOR_MEMORY:-768m}" \
     "${JOB_DIR}/${script}"
 }
 
