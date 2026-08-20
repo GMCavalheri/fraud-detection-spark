@@ -1,4 +1,6 @@
 pyspark==3.5.1
+# provides the distutils shim pyspark.ml still imports, removed from Python 3.12's stdlib
+setuptools<72
 numpy<2
 pandas==2.2.2
 pyarrow==16.1.0

@@ -1,0 +1,50 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  data-generator:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: data_generator/requirements-dev.txt
+      - run: pip install -r data_generator/requirements-dev.txt
+      - run: pytest data_generator/tests/ -v
+
+  spark-jobs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: spark_jobs/requirements-dev.txt
+      - run: pip install -r spark_jobs/requirements-dev.txt
+      - run: pytest tests/ -v
+        working-directory: spark_jobs
+
+  api:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: api/requirements-dev.txt
+      - run: pip install -r api/requirements-dev.txt
+      - run: pytest tests/ -v
+        working-directory: api

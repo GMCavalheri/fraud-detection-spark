@@ -1,5 +1,7 @@
 # Fraud Detection with Spark
 
+[![Tests](https://github.com/GMCavalheri/fraud-detection-spark/actions/workflows/tests.yml/badge.svg)](https://github.com/GMCavalheri/fraud-detection-spark/actions/workflows/tests.yml)
+
 A distributed fraud-detection pipeline built for a data-science portfolio: synthetic
 "messy" transaction data flows through a real Spark cluster for ETL and feature
 engineering, trains an MLlib model, serves predictions through FastAPI, and gets
@@ -184,6 +186,33 @@ frontend/              Streamlit dashboard (5 sections)
 postgres/init.sql      serving-layer schema (transactions_scored, daily_stats)
 docker-compose.yml     spark-master/worker x2, minio, postgres, api, frontend
 ```
+
+## Testing and logging
+
+Each of the three Python components (`data_generator`, `spark_jobs`, `api`) has its own
+pytest suite (57 tests total) and runs independently in CI on every push - see the badge
+above. Run them locally:
+
+```bash
+pip install -r data_generator/requirements-dev.txt && pytest data_generator/tests/
+pip install -r spark_jobs/requirements-dev.txt      && (cd spark_jobs && pytest tests/)
+pip install -r api/requirements-dev.txt             && (cd api && pytest tests/)
+```
+
+The Spark tests use a real local `SparkSession` fixture rather than mocking Spark itself -
+mocked DataFrame transformations would just test that the mocks return what you told them
+to return. The API tests mock the DB/inference layer instead, since the point there is
+verifying request handling and business logic, not a live database.
+
+Several tests are direct regressions for real bugs hit while building this: non-unique
+transaction IDs across file chunks, a negative-row-count crash on small trailing chunks, a
+float64 dtype bug that broke city-index lookups, and a silently-swallowed exception in the
+`/score` endpoint.
+
+All four services log to both console (`docker logs`) and a rotating file under the
+mounted `logs/` volume (`logs/spark_jobs/`, `logs/api/`, `logs/frontend/`) - useful since
+the Spark pipeline runs as a one-shot container that's discarded (`docker compose run
+--rm`) once it exits.
 
 ## Design notes / known trade-offs
 
