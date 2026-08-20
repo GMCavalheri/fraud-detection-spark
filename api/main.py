@@ -16,6 +16,8 @@ from schemas import (
 
 MODELS_DIR = os.environ.get("MODELS_DIR", "/opt/models")
 METRICS_PATH = os.path.join(MODELS_DIR, "metrics.json")
+PROCESSED_DATA_DIR = os.environ.get("PROCESSED_DATA_DIR", "/opt/data/processed")
+DQ_REPORT_PATH = os.path.join(PROCESSED_DATA_DIR, "data_quality_report.json")
 
 app = FastAPI(
     title="Fraud Detection API",
@@ -50,7 +52,7 @@ def meta():
 
 @app.get("/transactions", response_model=TransactionsPage)
 def list_transactions(
-    limit: int = Query(50, ge=1, le=500),
+    limit: int = Query(50, ge=1, le=2000),
     offset: int = Query(0, ge=0),
     predicted_label: Optional[int] = Query(None, ge=0, le=1),
     category: Optional[str] = None,
@@ -93,6 +95,14 @@ def stats_timeseries():
 @app.get("/stats/categories", response_model=list[CategoryBreakdown])
 def stats_categories():
     return db.fetch_category_breakdown()
+
+
+@app.get("/reports/data-quality")
+def data_quality_report():
+    if not os.path.exists(DQ_REPORT_PATH):
+        raise HTTPException(status_code=404, detail="Data quality report not found - has etl_clean.py run?")
+    with open(DQ_REPORT_PATH) as f:
+        return json.load(f)
 
 
 @app.post("/score", response_model=ScoreResponse)
