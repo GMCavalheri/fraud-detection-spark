@@ -66,11 +66,8 @@ def get_spark(app_name: str) -> SparkSession:
         .master(master)
         .config("spark.sql.session.timeZone", "UTC")
         .config("spark.sql.shuffle.partitions", os.environ.get("SPARK_SHUFFLE_PARTITIONS", "16"))
+        .config("spark.jars.packages", "org.postgresql:postgresql:42.7.3")
     )
-    if master.startswith("spark://"):
-        builder = builder.config(
-            "spark.jars.packages", "org.postgresql:postgresql:42.7.3"
-        )
     return builder.getOrCreate()
 
 
