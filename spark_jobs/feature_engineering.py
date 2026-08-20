@@ -26,12 +26,10 @@ def haversine_km(lat1, lon1, lat2, lon2):
     return EARTH_RADIUS_KM * c
 
 
-def main():
-    logger.info("Starting feature_engineering")
-    spark = get_spark("fraud-feature-engineering")
-    df = spark.read.parquet(CLEANED_PATH)
-    logger.info("Read cleaned Parquet from %s", CLEANED_PATH)
-
+def engineer_features(df):
+    """Pure transformation: cleaned transactions in, feature-enriched
+    transactions out. Extracted from main() so it can be unit-tested against
+    a small in-memory DataFrame without touching CLEANED_PATH/FEATURES_PATH."""
     df = df.withColumn("event_ts_unix", F.unix_timestamp("event_ts"))
 
     order_by_time = Window.partitionBy("account_id").orderBy("event_ts_unix")
@@ -118,6 +116,16 @@ def main():
 
     df = df.drop("hist_avg_amount", "hist_stddev_amount")
     df = df.fillna({"seconds_since_last_txn": -1, "distance_from_last_txn_km": -1.0, "implied_travel_speed_kmh": -1.0})
+    return df
+
+
+def main():
+    logger.info("Starting feature_engineering")
+    spark = get_spark("fraud-feature-engineering")
+    df = spark.read.parquet(CLEANED_PATH)
+    logger.info("Read cleaned Parquet from %s", CLEANED_PATH)
+
+    df = engineer_features(df)
 
     df = df.coalesce(4)
     logger.info("Writing feature Parquet to %s", FEATURES_PATH)

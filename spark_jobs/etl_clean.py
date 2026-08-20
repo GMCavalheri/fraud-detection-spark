@@ -40,8 +40,9 @@ MOBILE_SCHEMA = StructType([
 ])
 
 
-def read_core(spark):
-    df = spark.read.option("header", True).csv(os.path.join(RAW_DIR, "core_transactions"))
+def read_core(spark, raw_dir=None):
+    raw_dir = raw_dir or RAW_DIR
+    df = spark.read.option("header", True).csv(os.path.join(raw_dir, "core_transactions"))
     raw_count = df.count()
 
     ts_iso = F.to_timestamp("txn_date", "yyyy-MM-dd'T'HH:mm:ss")
@@ -77,12 +78,13 @@ def read_core(spark):
     return out, raw_count
 
 
-def read_mobile(spark):
-    raw_lines = spark.read.text(os.path.join(RAW_DIR, "mobile_events"))
+def read_mobile(spark, raw_dir=None):
+    raw_dir = raw_dir or RAW_DIR
+    raw_lines = spark.read.text(os.path.join(raw_dir, "mobile_events"))
     total_lines = raw_lines.count()
 
     df = spark.read.schema(MOBILE_SCHEMA).option("mode", "DROPMALFORMED").json(
-        os.path.join(RAW_DIR, "mobile_events")
+        os.path.join(raw_dir, "mobile_events")
     )
     parsed_count = df.count()
     corrupt_lines = total_lines - parsed_count
@@ -113,8 +115,9 @@ def read_mobile(spark):
     return out, total_lines, corrupt_lines
 
 
-def read_legacy(spark):
-    df = spark.read.option("header", True).csv(os.path.join(RAW_DIR, "legacy_feed"))
+def read_legacy(spark, raw_dir=None):
+    raw_dir = raw_dir or RAW_DIR
+    df = spark.read.option("header", True).csv(os.path.join(raw_dir, "legacy_feed"))
     raw_count = df.count()
 
     event_ts = F.to_timestamp("DATE", "dd-MMM-yyyy HH:mm")
@@ -146,6 +149,19 @@ def read_legacy(spark):
     return out, raw_count
 
 
+def geocode_missing_coords(df):
+    """Fill lat/lon from a city-name lookup for rows that only carry a city
+    (e.g. core_transactions has no native coordinates), leaving existing
+    lat/lon untouched. Pure enough to unit-test without files."""
+    lat_map = F.create_map([F.lit(x) for city, (lat, _lon) in CITY_COORDS.items() for x in (city, lat)])
+    lon_map = F.create_map([F.lit(x) for city, (_lat, lon) in CITY_COORDS.items() for x in (city, lon)])
+    return df.withColumn(
+        "lat", F.coalesce(F.col("lat"), lat_map.getItem(F.col("city")))
+    ).withColumn(
+        "lon", F.coalesce(F.col("lon"), lon_map.getItem(F.col("city")))
+    )
+
+
 def main():
     logger.info("Starting etl_clean")
     spark = get_spark("fraud-etl-clean")
@@ -169,13 +185,7 @@ def main():
 
     # geocode rows that only carry a city name (e.g. core_transactions) so the
     # geo-velocity fraud feature has coordinates to work with
-    lat_map = F.create_map([F.lit(x) for city, (lat, _lon) in CITY_COORDS.items() for x in (city, lat)])
-    lon_map = F.create_map([F.lit(x) for city, (_lat, lon) in CITY_COORDS.items() for x in (city, lon)])
-    union_df = union_df.withColumn(
-        "lat", F.coalesce(F.col("lat"), lat_map.getItem(F.col("city")))
-    ).withColumn(
-        "lon", F.coalesce(F.col("lon"), lon_map.getItem(F.col("city")))
-    )
+    union_df = geocode_missing_coords(union_df)
 
     total_before_dedup = union_df.count()
 
