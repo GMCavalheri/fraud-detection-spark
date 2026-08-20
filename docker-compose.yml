@@ -150,8 +150,10 @@ services:
       - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-minioadmin}
       - MINIO_BUCKET=${MINIO_BUCKET:-fraud-detection}
       - PROCESSED_DATA_DIR=/opt/data/processed
+      - LOG_DIR=/opt/logs
     volumes:
       - ./data/processed:/opt/data/processed:ro   # metrics.json / data_quality_report.json only
+      - ./logs/api:/opt/logs
     ports:
       - "8000:8000"
 

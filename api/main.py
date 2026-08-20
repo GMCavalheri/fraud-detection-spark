@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import db
 import inference
 from constants import CATEGORIES, CHANNELS, CITY_COORDS
+from logging_config import RequestLoggingMiddleware, configure_logging
 from schemas import (
     CategoryBreakdown, DailyStat, ScoreRequest, ScoreResponse, SummaryStats,
     Transaction, TransactionsPage,
@@ -18,12 +19,15 @@ PROCESSED_DATA_DIR = os.environ.get("PROCESSED_DATA_DIR", "/opt/data/processed")
 METRICS_PATH = os.path.join(PROCESSED_DATA_DIR, "metrics.json")
 DQ_REPORT_PATH = os.path.join(PROCESSED_DATA_DIR, "data_quality_report.json")
 
+logger = configure_logging()
+
 app = FastAPI(
     title="Fraud Detection API",
     description="Serves Spark-cleaned, MLlib-scored transactions and live fraud scoring.",
     version="1.0.0",
 )
 
+app.add_middleware(RequestLoggingMiddleware, logger=logger)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -113,4 +117,5 @@ def score_transaction(req: ScoreRequest):
     try:
         return inference.score(req)
     except Exception as exc:  # model/spark not ready, etc.
+        logger.exception("Scoring failed for account_id=%s category=%s", req.account_id, req.category)
         raise HTTPException(status_code=503, detail=f"Scoring unavailable: {exc}")

@@ -9,13 +9,17 @@ build realistic velocity/z-score/geo features; otherwise the transaction is
 scored as a brand-new card with no history (all history features neutral).
 """
 
+import logging
 import math
 import os
+import time
 from datetime import datetime, timezone
 
 from constants import CITY_COORDS
 
 import db
+
+logger = logging.getLogger("api")
 
 S3_BUCKET = os.environ.get("MINIO_BUCKET", "fraud-detection")
 MODEL_PATH = os.environ.get("MODEL_PATH", f"s3a://{S3_BUCKET}/models/fraud_model")
@@ -27,6 +31,8 @@ _model = None
 def _get_model():
     global _spark, _model
     if _model is None:
+        logger.info("Loading fraud model from %s (first /score call - this takes a few seconds)", MODEL_PATH)
+        start = time.monotonic()
         from pyspark.ml import PipelineModel
         from pyspark.sql import SparkSession
 
@@ -48,6 +54,7 @@ def _get_model():
             .getOrCreate()
         )
         _model = PipelineModel.load(MODEL_PATH)
+        logger.info("Model loaded in %.1fs", time.monotonic() - start)
     return _spark, _model
 
 
@@ -158,6 +165,11 @@ def score(req) -> dict:
     prediction = model.transform(row_df).select("prediction", "probability").first()
     fraud_probability = float(prediction["probability"][1])
     predicted_label = int(prediction["prediction"])
+
+    logger.info(
+        "Scored account_id=%s amount=%.2f category=%s -> probability=%.4f label=%d flags=%s",
+        req.account_id, req.amount_usd, req.category, fraud_probability, predicted_label, rule_flags,
+    )
 
     return {
         "fraud_probability": round(fraud_probability, 5),
