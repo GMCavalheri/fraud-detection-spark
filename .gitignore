@@ -1,0 +1,33 @@
+# Data & model artifacts (generated, not source)
+data/raw/
+data/processed/
+spark_jobs/models/
+!spark_jobs/models/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.venv-gen/
+.venv-spark/
+.ipynb_checkpoints/
+
+# Spark / Hadoop
+spark-warehouse/
+metastore_db/
+derby.log
+*.crc
+_SUCCESS
+
+# Env / secrets
+.env
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+
+# Docker
+*.log
