@@ -18,7 +18,9 @@ from pyspark.ml.feature import StringIndexer, VectorAssembler
 from pyspark.ml.functions import vector_to_array
 from pyspark.sql import functions as F
 
-from common import FEATURES_PATH, METRICS_PATH, MODEL_PATH, get_spark
+from common import FEATURES_PATH, METRICS_PATH, MODEL_PATH, get_logger, get_spark
+
+logger = get_logger("train_model")
 
 NUMERIC_FEATURES = [
     "amount_usd", "txn_count_1h", "txn_amount_sum_1h", "txn_count_24h",
@@ -33,8 +35,10 @@ TEST_FRACTION_DAYS = 0.2
 
 
 def main():
+    logger.info("Starting train_model")
     spark = get_spark("fraud-model-training")
     df = spark.read.parquet(FEATURES_PATH).filter(F.col(LABEL_COL).isNotNull())
+    logger.info("Read feature Parquet from %s", FEATURES_PATH)
 
     date_bounds = df.select(F.min("event_date").alias("min_d"), F.max("event_date").alias("max_d")).collect()[0]
     min_d, max_d = date_bounds["min_d"], date_bounds["max_d"]
@@ -63,8 +67,9 @@ def main():
     )
     pipeline = Pipeline(stages=indexers + [assembler, gbt])
 
-    print(f"Training on {train_df.count():,} rows (< {cutoff}), testing on {test_df.count():,} rows (>= {cutoff})")
+    logger.info("Training on %d rows (< %s), testing on %d rows (>= %s)", train_df.count(), cutoff, test_df.count(), cutoff)
     model = pipeline.fit(train_df)
+    logger.info("Model fit complete")
 
     predictions = model.transform(test_df).withColumn(
         "fraud_probability", vector_to_array(F.col("probability"))[1]
@@ -117,14 +122,22 @@ def main():
     with open(METRICS_PATH, "w") as f:
         json.dump(metrics, f, indent=2)
 
-    print("=== Model Evaluation ===")
-    print(json.dumps(metrics, indent=2))
+    logger.info("Metrics written to %s", METRICS_PATH)
+    logger.info(
+        "Evaluation: auc_roc=%.5f auc_pr=%.5f precision=%.5f recall=%.5f f1=%.5f",
+        auc_roc, auc_pr, precision, recall, f1,
+    )
 
     model.write().overwrite().save(MODEL_PATH)
-    print(f"Model saved to {MODEL_PATH}")
+    logger.info("Model saved to %s", MODEL_PATH)
 
     spark.stop()
+    logger.info("train_model complete")
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception:
+        logger.exception("train_model failed")
+        raise

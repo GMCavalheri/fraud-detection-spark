@@ -17,8 +17,10 @@ from pyspark.sql.types import (
 
 from common import (
     CANONICAL_COLUMNS, CITY_COORDS, CLEANED_PATH, CURRENCY_RATES_TO_USD,
-    DQ_REPORT_PATH, MCC_TO_CATEGORY, RAW_DIR, get_spark,
+    DQ_REPORT_PATH, MCC_TO_CATEGORY, RAW_DIR, get_logger, get_spark,
 )
+
+logger = get_logger("etl_clean")
 
 MOBILE_SCHEMA = StructType([
     StructField("evt_id", StringType()),
@@ -145,12 +147,16 @@ def read_legacy(spark):
 
 
 def main():
+    logger.info("Starting etl_clean")
     spark = get_spark("fraud-etl-clean")
     spark.conf.set("spark.sql.legacy.timeParserPolicy", "LEGACY")
 
     core_df, core_raw = read_core(spark)
+    logger.info("Read core_transactions: %d raw rows", core_raw)
     mobile_df, mobile_raw, mobile_corrupt = read_mobile(spark)
+    logger.info("Read mobile_events: %d lines, %d corrupt lines dropped", mobile_raw, mobile_corrupt)
     legacy_df, legacy_raw = read_legacy(spark)
+    logger.info("Read legacy_feed: %d raw rows", legacy_raw)
 
     negative_amount_count = core_df.filter(F.col("_had_negative_amount")).count()
 
@@ -176,6 +182,7 @@ def main():
     deduped = union_df.dropDuplicates(["source_system", "transaction_id"])
     after_dedup = deduped.count()
     duplicates_removed = total_before_dedup - after_dedup
+    logger.info("Deduplicated: %d rows -> %d rows (%d duplicates removed)", total_before_dedup, after_dedup, duplicates_removed)
 
     missing_merchant = deduped.filter(F.col("merchant").isNull()).count()
     missing_city = deduped.filter(F.col("city").isNull()).count()
@@ -198,8 +205,10 @@ def main():
     )
 
     final_count = cleaned.count()
+    logger.info("Final cleaned row count: %d (%d invalid/future timestamps dropped)", final_count, invalid_ts)
 
     cleaned = cleaned.withColumn("event_date", F.to_date("event_ts"))
+    logger.info("Writing cleaned Parquet to %s", CLEANED_PATH)
     cleaned.coalesce(4).write.mode("overwrite").partitionBy("event_date").parquet(CLEANED_PATH)
 
     report = {
@@ -223,11 +232,16 @@ def main():
     with open(DQ_REPORT_PATH, "w") as f:
         json.dump(report, f, indent=2)
 
-    print("=== Data Quality Report ===")
-    print(json.dumps(report, indent=2))
+    logger.info("Data quality report written to %s", DQ_REPORT_PATH)
+    logger.info("Data quality report: %s", json.dumps(report))
 
     spark.stop()
+    logger.info("etl_clean complete")
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception:
+        logger.exception("etl_clean failed")
+        raise

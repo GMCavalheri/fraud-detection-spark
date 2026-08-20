@@ -1,10 +1,48 @@
 """Shared configuration and helpers for all Spark jobs in the fraud detection pipeline."""
 
+import logging
 import os
+import sys
+from logging.handlers import RotatingFileHandler
 
 from pyspark.sql import SparkSession
 
 RAW_DIR = os.environ.get("RAW_DATA_DIR", "/opt/data/raw")
+LOG_DIR = os.environ.get("LOG_DIR", "/opt/logs")
+
+
+def get_logger(name: str) -> logging.Logger:
+    """Console + rotating-file logger shared by every job script.
+
+    Console output is always on (Docker/`docker logs` captures it); the file
+    handler is best-effort so tests and local runs without a mounted log
+    directory still work.
+    """
+    logger = logging.getLogger(name)
+    if logger.handlers:
+        return logger  # already configured (e.g. re-imported within the same process)
+
+    logger.setLevel(logging.INFO)
+    fmt = logging.Formatter(
+        "%(asctime)s | %(levelname)-7s | %(name)s | %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+    )
+
+    console = logging.StreamHandler(sys.stdout)
+    console.setFormatter(fmt)
+    logger.addHandler(console)
+
+    try:
+        os.makedirs(LOG_DIR, exist_ok=True)
+        file_handler = RotatingFileHandler(
+            os.path.join(LOG_DIR, f"{name}.log"), maxBytes=5_000_000, backupCount=3
+        )
+        file_handler.setFormatter(fmt)
+        logger.addHandler(file_handler)
+    except OSError:
+        pass  # LOG_DIR not writable/mounted in this environment - console-only is fine
+
+    logger.propagate = False
+    return logger
 
 # Small single-file JSON reports are written directly by driver-side Python
 # code (plain open()/json.dump), so they stay on the shared bind mount - that

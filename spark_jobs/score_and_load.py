@@ -11,14 +11,19 @@ from pyspark.ml import PipelineModel
 from pyspark.ml.functions import vector_to_array
 from pyspark.sql import functions as F
 
-from common import FEATURES_PATH, MODEL_PATH, get_spark, postgres_config
+from common import FEATURES_PATH, MODEL_PATH, get_logger, get_spark, postgres_config
+
+logger = get_logger("score_and_load")
 
 
 def main():
+    logger.info("Starting score_and_load")
     spark = get_spark("fraud-score-and-load")
     df = spark.read.parquet(FEATURES_PATH)
+    logger.info("Read feature Parquet from %s", FEATURES_PATH)
 
     model = PipelineModel.load(MODEL_PATH)
+    logger.info("Loaded model from %s", MODEL_PATH)
     scored = model.transform(df).withColumn(
         "fraud_probability", vector_to_array(F.col("probability"))[1]
     )
@@ -53,7 +58,7 @@ def main():
         .option("truncate", "true")
         .jdbc(url, "transactions_scored", properties=props)
     )
-    print(f"Loaded {result.count():,} scored transactions into transactions_scored")
+    logger.info("Loaded %d scored transactions into transactions_scored", result.count())
 
     daily_stats = (
         result.groupBy("event_date")
@@ -73,10 +78,15 @@ def main():
         .option("truncate", "true")
         .jdbc(url, "daily_stats", properties=props)
     )
-    print(f"Loaded {daily_stats.count():,} rows into daily_stats")
+    logger.info("Loaded %d rows into daily_stats", daily_stats.count())
 
     spark.stop()
+    logger.info("score_and_load complete")
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception:
+        logger.exception("score_and_load failed")
+        raise

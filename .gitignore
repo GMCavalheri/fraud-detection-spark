@@ -31,3 +31,7 @@ _SUCCESS
 
 # Docker
 *.log
+
+# Application logs (mounted volume, see docker-compose.yml)
+logs/*
+!logs/.gitkeep

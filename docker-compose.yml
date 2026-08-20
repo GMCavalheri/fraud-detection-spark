@@ -110,8 +110,10 @@ services:
       - POSTGRES_DB=${POSTGRES_DB:-fraud_detection}
       - POSTGRES_USER=${POSTGRES_USER:-fraud_admin}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-change_me}
+      - LOG_DIR=/opt/logs
     volumes:
       - ./data:/opt/data   # raw (read) + local JSON reports (written directly, not via Spark)
+      - ./logs/spark_jobs:/opt/logs
 
   postgres:
     image: postgres:16

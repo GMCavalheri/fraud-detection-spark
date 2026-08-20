@@ -10,7 +10,9 @@ Run with:
 from pyspark.sql import functions as F
 from pyspark.sql.window import Window
 
-from common import CLEANED_PATH, FEATURES_PATH, get_spark
+from common import CLEANED_PATH, FEATURES_PATH, get_logger, get_spark
+
+logger = get_logger("feature_engineering")
 
 EARTH_RADIUS_KM = 6371.0
 
@@ -25,8 +27,10 @@ def haversine_km(lat1, lon1, lat2, lon2):
 
 
 def main():
+    logger.info("Starting feature_engineering")
     spark = get_spark("fraud-feature-engineering")
     df = spark.read.parquet(CLEANED_PATH)
+    logger.info("Read cleaned Parquet from %s", CLEANED_PATH)
 
     df = df.withColumn("event_ts_unix", F.unix_timestamp("event_ts"))
 
@@ -116,11 +120,16 @@ def main():
     df = df.fillna({"seconds_since_last_txn": -1, "distance_from_last_txn_km": -1.0, "implied_travel_speed_kmh": -1.0})
 
     df = df.coalesce(4)
+    logger.info("Writing feature Parquet to %s", FEATURES_PATH)
     df.write.mode("overwrite").partitionBy("event_date").parquet(FEATURES_PATH)
-    print(f"Feature engineering complete. Rows written: {df.count()}")
+    logger.info("feature_engineering complete. Rows written: %d", df.count())
 
     spark.stop()
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception:
+        logger.exception("feature_engineering failed")
+        raise
