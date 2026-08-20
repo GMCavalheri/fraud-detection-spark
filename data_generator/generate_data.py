@@ -22,10 +22,13 @@ Usage:
 import argparse
 import hashlib
 import json
+import logging
 import os
 import random
 import shutil
 import string
+import time
+from logging.handlers import RotatingFileHandler
 
 import numpy as np
 import pandas as pd
@@ -33,6 +36,33 @@ from faker import Faker
 
 SEED = 42
 OUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "raw")
+LOG_DIR = os.environ.get("LOG_DIR", "/opt/logs")
+
+
+def _get_logger() -> logging.Logger:
+    logger = logging.getLogger("data_generator")
+    if logger.handlers:
+        return logger
+    logger.setLevel(logging.INFO)
+    fmt = logging.Formatter("%(asctime)s | %(levelname)-7s | %(name)s | %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+
+    console = logging.StreamHandler()
+    console.setFormatter(fmt)
+    logger.addHandler(console)
+
+    try:
+        os.makedirs(LOG_DIR, exist_ok=True)
+        file_handler = RotatingFileHandler(os.path.join(LOG_DIR, "data_generator.log"), maxBytes=5_000_000, backupCount=3)
+        file_handler.setFormatter(fmt)
+        logger.addHandler(file_handler)
+    except OSError:
+        pass  # LOG_DIR not writable/mounted (e.g. running locally outside Docker) - console-only is fine
+
+    logger.propagate = False
+    return logger
+
+
+logger = _get_logger()
 
 N_ACCOUNTS = 120_000
 DATE_RANGE_DAYS = 120
@@ -200,8 +230,11 @@ def impossible_travel_rows(n_pairs, min_gap_min=10, max_gap_min=45):
     cities within an impossibly short time window."""
     accounts = random_accounts(n_pairs)
     pair_idx = rng.integers(0, len(FAR_PAIRS), size=n_pairs)
-    city_a = np.array([FAR_PAIRS[i][0] for i in pair_idx])
-    city_b = np.array([FAR_PAIRS[i][1] for i in pair_idx])
+    # dtype=int guards against n_pairs=0: np.array([]) on an empty list defaults
+    # to float64, which would silently upcast city_all below and break its use
+    # as an integer index into CITY_NAMES
+    city_a = np.array([FAR_PAIRS[i][0] for i in pair_idx], dtype=int)
+    city_b = np.array([FAR_PAIRS[i][1] for i in pair_idx], dtype=int)
     t1 = random_timestamps(n_pairs)
     gap = rng.integers(min_gap_min * 60, max_gap_min * 60, size=n_pairs)
     t2 = t1 + pd.to_timedelta(gap, unit="s")
@@ -474,7 +507,7 @@ def write_csv_partitions(gen_fn, total_rows, out_subdir, rows_per_file=ROWS_PER_
         df.to_csv(os.path.join(out_path, f"part-{part:04d}.csv"), index=False)
         written += n
         part += 1
-        print(f"  [{out_subdir}] wrote part-{part:04d}.csv ({len(df)} rows, {written}/{total_rows})")
+        logger.info("[%s] wrote part-%04d.csv (%d rows, %d/%d)", out_subdir, part, len(df), written, total_rows)
 
 
 def write_json_partitions(gen_fn, total_rows, out_subdir, rows_per_file=ROWS_PER_FILE):
@@ -495,7 +528,7 @@ def write_json_partitions(gen_fn, total_rows, out_subdir, rows_per_file=ROWS_PER
                 f.write(line + "\n")
         written += len(records)
         part += 1
-        print(f"  [{out_subdir}] wrote part-{part:04d}.json ({len(records)} rows, {written}/{total_rows})")
+        logger.info("[%s] wrote part-%04d.json (%d rows, %d/%d)", out_subdir, part, len(records), written, total_rows)
 
 
 def main():
@@ -514,18 +547,24 @@ def main():
 
     rows_per_file = min(ROWS_PER_FILE, max(5000, args.rows // 10))
 
-    print(f"Generating ~{args.rows:,} synthetic transactions into {OUT_DIR}")
-    print(f"  core_transactions: {n_core:,} rows")
+    start = time.monotonic()
+    logger.info("Generating ~%d synthetic transactions into %s", args.rows, OUT_DIR)
+
+    logger.info("core_transactions: %d rows", n_core)
     write_csv_partitions(generate_core_chunk, n_core, "core_transactions", rows_per_file)
 
-    print(f"  mobile_events: {n_mobile:,} rows")
+    logger.info("mobile_events: %d rows", n_mobile)
     write_json_partitions(generate_mobile_chunk, n_mobile, "mobile_events", rows_per_file)
 
-    print(f"  legacy_feed: {n_legacy:,} rows")
+    logger.info("legacy_feed: %d rows", n_legacy)
     write_csv_partitions(generate_legacy_chunk, n_legacy, "legacy_feed", rows_per_file)
 
-    print("Done.")
+    logger.info("Done. Generated %d rows in %.1fs", args.rows, time.monotonic() - start)
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception:
+        logger.exception("data generation failed")
+        raise

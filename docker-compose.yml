@@ -164,6 +164,9 @@ services:
       - api
     environment:
       - API_BASE_URL=http://api:8000
+      - LOG_DIR=/opt/logs
+    volumes:
+      - ./logs/frontend:/opt/logs
     ports:
       - "8501:8501"
 

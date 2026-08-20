@@ -1,4 +1,6 @@
+import logging
 import os
+from logging.handlers import RotatingFileHandler
 
 import pandas as pd
 import plotly.express as px
@@ -7,15 +9,46 @@ import requests
 import streamlit as st
 
 API_BASE_URL = os.environ.get("API_BASE_URL", "http://localhost:8000")
+LOG_DIR = os.environ.get("LOG_DIR", "/opt/logs")
 
 st.set_page_config(page_title="Fraud Detection Dashboard", page_icon="🛡️", layout="wide")
 
 
+def _get_logger() -> logging.Logger:
+    logger = logging.getLogger("frontend")
+    if logger.handlers:
+        return logger
+    logger.setLevel(logging.INFO)
+    fmt = logging.Formatter("%(asctime)s | %(levelname)-7s | %(name)s | %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+
+    console = logging.StreamHandler()
+    console.setFormatter(fmt)
+    logger.addHandler(console)
+
+    try:
+        os.makedirs(LOG_DIR, exist_ok=True)
+        file_handler = RotatingFileHandler(os.path.join(LOG_DIR, "frontend.log"), maxBytes=5_000_000, backupCount=3)
+        file_handler.setFormatter(fmt)
+        logger.addHandler(file_handler)
+    except OSError:
+        pass
+
+    logger.propagate = False
+    return logger
+
+
+logger = _get_logger()
+
+
 @st.cache_data(ttl=30)
 def api_get(path, params=None):
-    r = requests.get(f"{API_BASE_URL}{path}", params=params, timeout=30)
-    r.raise_for_status()
-    return r.json()
+    try:
+        r = requests.get(f"{API_BASE_URL}{path}", params=params, timeout=30)
+        r.raise_for_status()
+        return r.json()
+    except requests.RequestException:
+        logger.exception("GET %s%s failed", API_BASE_URL, path)
+        raise
 
 
 def render_overview():
@@ -218,11 +251,13 @@ def render_live_demo():
         resp = requests.post(f"{API_BASE_URL}/score", json=payload, timeout=60)
 
     if resp.status_code != 200:
+        logger.error("POST /score failed with %d: %s", resp.status_code, resp.text)
         st.error(f"Scoring failed: {resp.text}")
         return
 
     result = resp.json()
     prob = result["fraud_probability"]
+    logger.info("Live demo score: probability=%.4f label=%d", prob, result["predicted_label"])
 
     fig = go.Figure(
         go.Indicator(
